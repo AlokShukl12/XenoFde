@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("MONGO_URI")
+}
+
+model Shop {
+  id           String   @id @map("_id") @db.ObjectId
+  name         String?
+  ownerEmail   String?
+  shopDomain   String   @unique
+  accessToken  String
+  apiVersion   String?
+  scopes       String[]
+  status       String?
+  lastSyncedAt DateTime?
+  webhookSecret String?
+  metadata     Json?
+  createdAt    DateTime? @map("createdAt")
+  updatedAt    DateTime? @map("updatedAt")
+
+  customers Customer[]
+  products  Product[]
+  orders    Order[]
+  events    Event[]
+
+  @@map("shops")
+}
+
+model Customer {
+  id                 String   @id @map("_id") @db.ObjectId
+  shopId             String   @map("shop") @db.ObjectId
+  shopifyId          String
+  email              String?
+  phone              String?
+  firstName          String?
+  lastName           String?
+  tags               String[]
+  totalSpent         Float?
+  state              String?
+  country            String?
+  marketingOptInLevel String?
+  shopifyCreatedAt   DateTime?
+  shopifyUpdatedAt   DateTime?
+  createdAt          DateTime? @map("createdAt")
+  updatedAt          DateTime? @map("updatedAt")
+
+  shop Shop @relation(fields: [shopId], references: [id])
+
+  @@index([shopId])
+  @@map("customers")
+}
+
+model Product {
+  id               String   @id @map("_id") @db.ObjectId
+  shopId           String   @map("shop") @db.ObjectId
+  shopifyId        String
+  title            String?
+  status           String?
+  productType      String?
+  vendor           String?
+  tags             String[]
+  variants         Json?
+  shopifyCreatedAt DateTime?
+  shopifyUpdatedAt DateTime?
+  createdAt        DateTime? @map("createdAt")
+  updatedAt        DateTime? @map("updatedAt")
+
+  shop Shop @relation(fields: [shopId], references: [id])
+
+  @@index([shopId])
+  @@map("products")
+}
+
+model Order {
+  id                String   @id @map("_id") @db.ObjectId
+  shopId            String   @map("shop") @db.ObjectId
+  shopifyId         String
+  name              String?
+  email             String?
+  currency          String?
+  totalPrice        Float?
+  subtotalPrice     Float?
+  totalDiscounts    Float?
+  financialStatus   String?
+  fulfillmentStatus String?
+  processedAt       DateTime?
+  tags              String[]
+  customer          Json?
+  lineItems         Json?
+  shopifyCreatedAt  DateTime?
+  shopifyUpdatedAt  DateTime?
+  createdAt         DateTime? @map("createdAt")
+  updatedAt         DateTime? @map("updatedAt")
+
+  shop Shop @relation(fields: [shopId], references: [id])
+
+  @@index([shopId])
+  @@index([shopId, processedAt])
+  @@map("orders")
+}
+
+model Event {
+  id         String   @id @map("_id") @db.ObjectId
+  shopId     String   @map("shop") @db.ObjectId
+  topic      String
+  payload    Json?
+  receivedAt DateTime?
+  createdAt  DateTime? @map("createdAt")
+  updatedAt  DateTime? @map("updatedAt")
+
+  shop Shop @relation(fields: [shopId], references: [id])
+
+  @@index([shopId, topic])
+  @@map("events")
+}
