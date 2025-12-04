@@ -7,6 +7,7 @@ const Event = require('../models/Event');
 
 const DEFAULT_API_VERSION = process.env.SHOPIFY_API_VERSION || '2024-10';
 
+// Normalize and validate the provided shop domain.
 const normalizeShopDomain = (rawDomain) => {
   if (!rawDomain) return null;
   const trimmed = String(rawDomain).trim();
@@ -76,6 +77,54 @@ const parsePageInfo = (linkHeader) => {
   }
 };
 
+const buildShopifyError = (err, domain, resourcePath) => {
+  const status = err.response?.status;
+  const statusText = err.response?.statusText;
+  const errors = err.response?.data?.errors || err.response?.data;
+  const detail = errors ? JSON.stringify(errors) : err.message;
+  const hint =
+    status === 404
+      ? 'Verify the shop domain is the Admin hostname (e.g. your-store.myshopify.com) and the token has access.'
+      : status === 401 || status === 403
+        ? 'Check the Admin API token and scopes for customers/orders/products.'
+        : '';
+
+  const message = [`Shopify ${status || ''} ${statusText || ''} for ${domain} ${resourcePath}: ${detail}`, hint]
+    .filter(Boolean)
+    .join(' - ')
+    .trim();
+
+  const enhancedError = new Error(message);
+  enhancedError.status = status;
+  enhancedError.statusText = statusText;
+  enhancedError.response = err.response;
+  enhancedError.shopDomain = domain;
+  enhancedError.resourcePath = resourcePath;
+  return enhancedError;
+};
+
+// Quick connectivity check to ensure the domain/token pair is valid and capture the canonical myshopify domain.
+const verifyShopCredentials = async (shop) => {
+  const normalizedDomain = normalizeShopDomain(shop.shopDomain);
+  if (!normalizedDomain) {
+    throw new Error('Invalid shop domain. Provide a hostname like "your-store.myshopify.com".');
+  }
+
+  const client = clientForShop({
+    ...shop,
+    shopDomain: normalizedDomain,
+    apiVersion: shop.apiVersion || DEFAULT_API_VERSION,
+  });
+
+  try {
+    const response = await client.get('shop.json');
+    const canonicalDomain = response?.data?.shop?.myshopify_domain?.toLowerCase() || normalizedDomain;
+    return { canonicalDomain, shop: response?.data?.shop };
+  } catch (err) {
+    throw buildShopifyError(err, normalizedDomain, 'shop');
+  }
+};
+
 const fetchPaginatedResource = async (shop, resourcePath, dataKey, params = {}) => {
   const domain = normalizeShopDomain(shop.shopDomain);
   const client = clientForShop(shop);
@@ -96,22 +145,7 @@ const fetchPaginatedResource = async (shop, resourcePath, dataKey, params = {}) 
       records.push(...payload);
       pageInfo = parsePageInfo(response.headers.link);
     } catch (err) {
-      const status = err.response?.status;
-      const statusText = err.response?.statusText;
-      const errors = err.response?.data?.errors || err.response?.data;
-      const detail = errors ? JSON.stringify(errors) : err.message;
-      const hint =
-        status === 404
-          ? 'Verify the shop domain is the Admin hostname (e.g. your-store.myshopify.com) and the token has access.'
-          : status === 401 || status === 403
-            ? 'Check the Admin API token and scopes for customers/orders/products.'
-            : '';
-      throw new Error(
-        [`Shopify ${status || ''} ${statusText || ''} for ${domain} ${resourcePath}: ${detail}`, hint]
-          .filter(Boolean)
-          .join(' - ')
-          .trim()
-      );
+      throw buildShopifyError(err, domain, resourcePath);
     }
   } while (pageInfo);
 
@@ -273,4 +307,5 @@ module.exports = {
   syncShopResources,
   handleWebhook,
   normalizeShopDomain,
+  verifyShopCredentials,
 };
